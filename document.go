@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,12 +14,12 @@ import (
 )
 
 const (
-	docGenName        = "UrFaveCliDocGen"
-	docFilePermission = 0o600
+	docGenName          = "UrFaveCliDocGen"
+	docFolderPermission = 0o755
 )
 
-// getDocs generates markdown documentation for the commands in app.
-// Shamelessly copied code from https://github.com/urfave/cli/issues/340#issuecomment-334389849 with few modification.
+// shamelessly copied code from https://github.com/urfave/cli/issues/340#issuecomment-334389849 with few modification.
+// thankful to https://github.com/Southclaws for this.
 func getDocs(app *cli.App, logger *logrus.Logger) string {
 	buffer := bytes.Buffer{}
 
@@ -53,7 +52,7 @@ func getDocs(app *cli.App, logger *logrus.Logger) string {
 			logger.Infof("generating documents on flags used by subcommand '%s'", command.Name)
 			buffer.WriteString("#### Flags\n\n")
 			for _, flag := range command.Flags {
-				buffer.WriteString(fmt.Sprintf("- `--%s`\n", flag.String()))
+				buffer.WriteString(fmt.Sprintf("- `%s`\n", flag.String()))
 			}
 			buffer.WriteString("\n\n")
 		}
@@ -63,7 +62,7 @@ func getDocs(app *cli.App, logger *logrus.Logger) string {
 		logger.Infof("generating documents on global flags of app '%s'", app.Name)
 		buffer.WriteString("## Global Flags\n\n")
 		for _, flag := range app.Flags {
-			buffer.WriteString(fmt.Sprintf("- `--%s`\n", flag.String()))
+			buffer.WriteString(fmt.Sprintf("- `%s`\n", flag.String()))
 		}
 		buffer.WriteString("\n\n")
 	}
@@ -73,9 +72,14 @@ func getDocs(app *cli.App, logger *logrus.Logger) string {
 	return buffer.String()
 }
 
-func GenerateDocs(app *cli.App) {
-	docsRootPath := "doc"
-	docsPath := filepath.Join(docsRootPath, "docs.md")
+// GenerateDocs generates markdown documentation for the commands in app.
+func GenerateDocs(app *cli.App, file string) error {
+	docsRootPath, err := filepath.Abs("doc")
+	if err != nil {
+		return err
+	}
+
+	docsPath := filepath.Join(docsRootPath, fmt.Sprintf("%s.md", file))
 
 	logger := logrus.New()
 	logger.SetLevel(gocd.GetLoglevel("info"))
@@ -87,32 +91,42 @@ func GenerateDocs(app *cli.App) {
 
 	docString := getDocs(app, logger)
 
-	logger.Infof("documets for cli '%s' was rendered, proceeding to wrtite the same to path '%s'", docGenName, docsPath)
+	logger.Infof("documents for cli '%s' were rendered, proceeding to write the same to path '%s'", docGenName, docsPath)
 
-	logger.Infof("creating directory 'doc' to place document files")
-
-	if _, err := os.Stat(docsRootPath); errors.Is(err, os.ErrNotExist) {
-		if err = os.Mkdir(docsRootPath, docFilePermission); err != nil {
-			logger.Fatalf("creating document directory errored with: '%v'", err)
-		}
-	}
-
-	logger.Infof("proceeding to write rendered document to file")
-
-	if _, err := os.Stat(docsPath); errors.Is(err, os.ErrNotExist) {
-		if err = os.WriteFile(docsPath, []byte(docString), docFilePermission); err != nil {
-			logger.Fatalf("writing document to file '%s' errored with: '%v'", docsPath, err)
+	_, err = os.Stat(docsRootPath)
+	if err != nil && errors.Is(err, os.ErrNotExist) {
+		logger.Infof("creating directory 'doc' to place document files")
+		if err = os.MkdirAll(docsRootPath, docFolderPermission); err != nil {
+			return fmt.Errorf("creating document directory errored with: '%w'", err)
 		}
 	} else {
-		docFile, err := os.OpenFile(docsPath, os.O_WRONLY, os.ModeAppend) //nolint:nosnakecase
-		if err != nil {
-			log.Fatalf("reading existing document file '%s' to update it failed", docsPath)
-		}
+		logger.Infof("skipping the creation of directory 'doc' as it was already created.")
+	}
 
-		if _, err := docFile.WriteString(docString); err != nil {
-			log.Fatalf("updating document file '%s' with newer information errored with: '%v'", docsPath, err)
+	logger.Infof("proceeding to write the rendered document to '%s'.", docsPath)
+
+	_, err = os.Stat(docsPath)
+	if errors.Is(err, os.ErrNotExist) { //nolint:gocritic
+		logger.Info("writing rendered document to file")
+		if _, err = os.Create(docsPath); err != nil {
+			return fmt.Errorf("writing document to file '%s' errored with: '%w'", docsPath, err)
 		}
+	} else if err != nil {
+		return fmt.Errorf("stating document to file '%s' errored with: '%w'", docsPath, err)
+	} else {
+		logger.Infof("found an existing document with the same name. Updating it with the latest updates.")
+	}
+
+	docFile, err := os.OpenFile(docsPath, os.O_CREATE|os.O_WRONLY, os.ModeAppend) //nolint:nosnakecase
+	if err != nil {
+		return fmt.Errorf("reading the document file '%s' failed with: '%w'", docsPath, err)
+	}
+
+	if _, err := docFile.WriteString(docString); err != nil {
+		return fmt.Errorf("updating document file '%s' with newer information errored with: '%w'", docsPath, err)
 	}
 
 	logger.Infof("documents were successfully rendered to '%s'", docsPath)
+
+	return nil
 }

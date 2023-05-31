@@ -20,3 +20,6 @@ cover.html
 
 # dropping all local builds generated for testing
 bin/
+
+# dropping all documents generated for testing
+doc/
