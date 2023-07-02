@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/nikhilsbhat/gocd-sdk-go"
+	goCdLogger "github.com/nikhilsbhat/gocd-sdk-go/pkg/logger"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -87,7 +87,7 @@ func GenerateDocs(app *cli.App, file string) error {
 	docsPath := filepath.Join(docsRootPath, fmt.Sprintf("%s.md", file))
 
 	logger := logrus.New()
-	logger.SetLevel(gocd.GetLoglevel("info"))
+	logger.SetLevel(goCdLogger.GetLoglevel("info"))
 	logger.WithField(docGenName, true)
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
